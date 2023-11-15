@@ -7,8 +7,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#endif
 #include <sys/time.h>
 #include <error.h>
 #define NTP_PORT  123
@@ -96,6 +102,20 @@ int main (void) {
   const char POLL[] = "tc=";
   const char REFID[] = "refid=";
 
+#ifdef _WIN32
+  WORD wVersionRequested;
+  WSADATA wsaData;
+  int err;
+
+  wVersionRequested = MAKEWORD(2, 2);
+
+  err = WSAStartup(wVersionRequested, &wsaData);
+  if (err != 0) {
+    printf("WSAStartup failed with error: %d\n", err);
+    return 2;
+  }
+#endif
+
   /* initialise timeout value */
   tv.tv_sec = 1;
   tv.tv_usec = 0;
@@ -103,7 +123,8 @@ int main (void) {
   /* initialise file descriptor set */
   FD_ZERO(&fds);
 
-  inet_aton("127.0.0.1", &address);
+  address.s_addr = htonl(0x7f000001);
+/*  inet_aton("127.0.0.1", &address);*/
   sock.sin_family = AF_INET;
   sock.sin_addr = address;
   sock.sin_port = htons(NTP_PORT);
@@ -125,7 +146,7 @@ int main (void) {
   }
   FD_SET(sd, &fds);
 
-  if (send(sd, &ntpmsg, sizeof(ntpmsg), 0) < 0) {
+  if (send(sd, (void*)&ntpmsg, sizeof(ntpmsg), 0) < 0) {
     perror ("On send");
     die ("unable to send command to NTP port");
   }
@@ -139,7 +160,7 @@ int main (void) {
   if (n == -1)
     die ("error on select");
 
-  if ((n = recv (sd, &ntpmsg, sizeof(ntpmsg), 0)) < 0)
+  if ((n = recv (sd, (void*)&ntpmsg, sizeof(ntpmsg), 0)) < 0)
     die ("Unable to talk to NTP daemon. Is it running?");
 
   /*----------------------------------------------------------------------*/
@@ -177,7 +198,7 @@ int main (void) {
     /* look at the system event code and see if indicates system restart */
     if ((ntpmsg.status2 & 0x0F) == 1)
       printf ("  time server re-starting\n");
-      rc=1;
+    rc=1;
   }
   else {
     rc=0;
@@ -193,19 +214,19 @@ int main (void) {
       // source of sync is another NTP server so check the IP address
       strncpy(buff, ntpmsg.payload, sizeof(buff));
       if ((newstr = strstr (buff, REFID))) {
-	newstr += sizeof(REFID) - 1;
-	dispstr = strtok(newstr,",");
+        newstr += sizeof(REFID) - 1;
+        dispstr = strtok(newstr,",");
 
-	/* Check the resultant string is of a reasonable length */
-	if ((strlen (dispstr) == 0) || (strlen (dispstr) > 16)) {
-	  printf (" <IP unreadable>");
-	}
-	else {
-	  printf(" (%s)",dispstr);
-	}
+        /* Check the resultant string is of a reasonable length */
+        if ((strlen (dispstr) == 0) || (strlen (dispstr) > 16)) {
+          printf (" <IP unreadable>");
+        }
+        else {
+          printf(" (%s)",dispstr);
+        }
       } else {
-	rc=1;
-	printf (" <IP unknown>");
+        rc=1;
+        printf (" <IP unknown>");
       }
 
     }
@@ -224,10 +245,10 @@ int main (void) {
 
       /* Check the resultant string is of a reasonable length */
       if ((strlen (dispstr) == 0) || (strlen (dispstr) > 2)) {
-	printf (", stratum unreadable\n");
+        printf (", stratum unreadable\n");
       }
       else {
-	printf(" at stratum %s \n",dispstr);
+        printf(" at stratum %s \n",dispstr);
       }
     } else {
       rc=1;
@@ -245,11 +266,11 @@ int main (void) {
 
       /* Check the resultant string is of a reasonable length */
       if ((strlen (dispstr) == 0) || (strlen (dispstr) > 10) ||
-	      (strlen (delaystr) == 0) || (strlen (delaystr) > 10)) {
-	printf ("accuracy unreadable\n");
+              (strlen (delaystr) == 0) || (strlen (delaystr) > 10)) {
+        printf ("accuracy unreadable\n");
       }
       else {
-	printf("   time correct to within %.0f ms\n", atof(dispstr) + atof(delaystr) / 2.0);
+        printf("   time correct to within %.0f ms\n", atof(dispstr) + atof(delaystr) / 2.0);
       }
     } else {
       rc=1;
